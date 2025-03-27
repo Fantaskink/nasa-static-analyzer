@@ -8,8 +8,8 @@ use lang_c::print::Printer;
 use lang_c::span::Span;
 use lang_c::visit::Visit;
 use lang_c::visit::{
-    visit_call_expression, visit_declaration, visit_expression, visit_function_definition,
-    visit_statement, visit_while_statement,
+    visit_call_expression, visit_cast_expression, visit_declaration, visit_expression,
+    visit_function_definition, visit_statement, visit_while_statement,
 };
 
 mod config;
@@ -34,7 +34,8 @@ struct Symbol {
 struct StaticAnalyzer {
     rule_set: RuleSet,                     // Configuration for the static analyzer
     symbol_table: HashMap<String, Symbol>, // Symbol table to store the types of variables
-    source: String,                        // Source code of the program being analyzed
+    current_function_type_cast: Option<lang_c::ast::TypeSpecifier>, // Type of the current function being analyzed, is None if not cast
+    source: String,                   // Source code of the program being analyzed
     current_function: Option<String>, // Name of the current function being analyzed for recursion
 }
 
@@ -43,6 +44,7 @@ impl StaticAnalyzer {
         StaticAnalyzer {
             rule_set,
             symbol_table: HashMap::new(),
+            current_function_type_cast: None,
             source,
             current_function: None,
         }
@@ -128,8 +130,10 @@ impl StaticAnalyzer {
         }
 
         let line_number = self.get_line_number(span.start);
-        println!("Error: Loop at line {} does not have fixed bounds", line_number);
-        
+        println!(
+            "Error: Loop at line {} does not have fixed bounds",
+            line_number
+        );
     }
 
     fn check_heap_usage(&self, call_expression: &lang_c::ast::CallExpression, span: &Span) {
@@ -187,24 +191,21 @@ impl StaticAnalyzer {
         }
     }
 
-    fn check_return_value(&self, expression: &lang_c::ast::Expression, span: &Span) {
-        if let lang_c::ast::Expression::Call(call_expression) = &expression {
-            let callee = &call_expression.node.callee.node;
-            if let lang_c::ast::Expression::Identifier(identifier) = callee {
-                // Look up in symbol table to get the type of the function, if it exists and is not void, print an error
-                if let Some(Symbol {
-                    symbol_type: SymbolType::Function { return_type },
-                    ..
-                }) = self.symbol_table.get(&identifier.node.name)
-                {
+    fn check_return_value(&self, call_expression: &lang_c::ast::CallExpression, span: &Span) {
+        if let lang_c::ast::Expression::Identifier(identifier) = &call_expression.callee.node {
+            if let Some(symbol) = self.symbol_table.get(&identifier.node.name) {
+                if let SymbolType::Function { return_type } = &symbol.symbol_type {
+                    // Check if the return type is not void
                     if *return_type != lang_c::ast::TypeSpecifier::Void {
-                        let line_number = self.get_line_number(span.start);
-                        let source_code = self.get_source_code_from_span(span);
-                        println!(
-                            "Error: Return value of function '{}' not checked at line {}",
-                            identifier.node.name, line_number
-                        );
-                        println!("{}", source_code);
+                        // Ensure that current_function_type_cast is set
+                        if self.current_function_type_cast.is_none() {
+                            let line_number = self.get_line_number(span.start);
+                            println!(
+                                "Error: Call to non-void function at line {} does not handle the return value",
+                                line_number
+                            );
+                            println!("{}", self.get_source_code_from_span(span));
+                        }
                     }
                 }
             }
@@ -214,10 +215,6 @@ impl StaticAnalyzer {
 
 impl<'ast> Visit<'ast> for StaticAnalyzer {
     fn visit_expression(&mut self, expression: &'ast lang_c::ast::Expression, span: &'ast Span) {
-        if self.rule_set.check_return_value {
-            self.check_return_value(expression, span);
-        }
-
         visit_expression(self, expression, span);
     }
 
@@ -287,6 +284,23 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
         self.current_function = None;
     }
 
+    fn visit_cast_expression(
+        &mut self,
+        cast_expression: &'ast lang_c::ast::CastExpression,
+        span: &'ast Span,
+    ) {
+        let Some(specifier) = cast_expression.type_name.node.specifiers.first() else {
+            return;
+        };
+
+        let type_specifier: &lang_c::ast::SpecifierQualifier = &specifier.node;
+        if let lang_c::ast::SpecifierQualifier::TypeSpecifier(type_specifier) = type_specifier {
+            self.current_function_type_cast = Some(type_specifier.node.clone());
+        }
+        visit_cast_expression(self, cast_expression, span);
+        self.current_function_type_cast = None;
+    }
+
     fn visit_call_expression(
         &mut self,
         call_expression: &'ast lang_c::ast::CallExpression,
@@ -309,12 +323,7 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
         }
 
         if self.rule_set.check_return_value {
-            /*
-            This will require a symbol table to check the return type of the function.
-            The parser can seemingly handle #include directives, so we can use that to
-            include the header files and get the return type of functions such as printf
-            */
-            //todo!("Implement return value checking");
+            self.check_return_value(call_expression, span);
         }
 
         visit_call_expression(self, call_expression, span);
