@@ -10,6 +10,8 @@ pub struct RulesConfig {
 pub struct RuleSet {
     //pub fixed_loop_bounds: bool,
     pub restrict_goto: bool,
+    pub restrict_setjmp: bool,
+    pub restrict_longjmp: bool,
     pub restrict_recursion: bool,
 }
 

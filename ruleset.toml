@@ -1,6 +1,6 @@
 [rule_set]
 # fixed_loop_bounds = true
 restrict_goto = true
-# restrict_longjmp = true
-# restrict_setjmp = true
+restrict_longjmp = true
+restrict_setjmp = true
 restrict_recursion = true

@@ -63,12 +63,29 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
         call_expression: &'ast lang_c::ast::CallExpression,
         span: &'ast Span,
     ) {
+
         if self.rule_set.restrict_recursion {
             if let lang_c::ast::Expression::Identifier(identifier) = &call_expression.callee.node {
                 if let Some(current_function) = &self.current_function {
                     if identifier.node.name == *current_function {
                         println!("Error: Recursive call found at {:?}", span);
                     }
+                }
+            }
+        }
+
+        if self.rule_set.restrict_setjmp {
+            if let lang_c::ast::Expression::Identifier(identifier) = &call_expression.callee.node {
+                if identifier.node.name == "setjmp" {
+                    println!("Error: setjmp found at {:?}", span);
+                }
+            }
+        }
+
+        if self.rule_set.restrict_longjmp {
+            if let lang_c::ast::Expression::Identifier(identifier) = &call_expression.callee.node {
+                if identifier.node.name == "longjmp" {
+                    println!("Error: longjmp found at {:?}", span);
                 }
             }
         }
