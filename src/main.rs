@@ -13,6 +13,7 @@ mod config;
 use config::load_ruleset;
 use config::RuleSet;
 
+#[derive(Debug)]
 struct StaticAnalyzer {
     rule_set: RuleSet,                // Configuration for the static analyzer
     source: String,                   // Source code of the program being analyzed
@@ -30,6 +31,7 @@ impl StaticAnalyzer {
         }
     }
 
+    // Helper function to get the line number for a given offset in the source code
     fn get_line_number(&self, span_point: usize) -> usize {
         get_location_for_offset(&self.source, span_point).0.line
     }
@@ -76,6 +78,17 @@ impl StaticAnalyzer {
             }
         }
     }
+
+    fn check_heap_usage(&self, call_expression: &lang_c::ast::CallExpression, span: &Span) {
+        // Check for usage of malloc, calloc, realloc, etc.
+        if let lang_c::ast::Expression::Identifier(identifier) = &call_expression.callee.node {
+            let heap_functions = ["malloc", "calloc", "realloc", "free"];
+            if heap_functions.contains(&identifier.node.name.as_str()) {
+                let line_number = self.get_line_number(span.start);
+                println!("Error: Heap usage found at line {}", line_number);
+            }
+        }
+    }
 }
 
 impl<'ast> Visit<'ast> for StaticAnalyzer {
@@ -101,9 +114,9 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
             let end_line = self.get_line_number(span.end);
             let size = end_line - start_line + 1;
 
-            if size > 50 {
+            if size > 60 {
                 println!(
-                    "Error: Function size exceeds 50 lines at line {}",
+                    "Error: Function size exceeds 60 lines at line {}",
                     start_line
                 );
             }
@@ -117,6 +130,7 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
         call_expression: &'ast lang_c::ast::CallExpression,
         span: &'ast Span,
     ) {
+        
         if self.rule_set.restrict_recursion {
             self.check_recursion(call_expression, span);
         }
@@ -127,6 +141,19 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
 
         if self.rule_set.restrict_longjmp {
             self.check_longjmp(call_expression, span);
+        }
+
+        if self.rule_set.restrict_heap_allocation {
+            self.check_heap_usage(call_expression, span);
+        }
+
+        if self.rule_set.check_return_value {
+            /*
+            This will require a symbol table to check the return type of the function.
+            The parser can seemingly handle #include directives, so we can use that to
+            include the header files and get the return type of functions such as printf
+            */
+            todo!("Implement return value checking");
         }
 
         visit_call_expression(self, call_expression, span);

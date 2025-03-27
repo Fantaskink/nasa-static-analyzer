@@ -6,7 +6,7 @@ pub struct RulesConfig {
     pub rule_set: RuleSet,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct RuleSet {
     // Avoid complex flow constructs
     pub restrict_goto: bool,
@@ -17,8 +17,14 @@ pub struct RuleSet {
     // Enforce loop bounds
     pub fixed_loop_bounds: bool,
 
+    // Restrict heap allocation, e.g. malloc
+    pub restrict_heap_allocation: bool,
+
     // Restrict function size
     pub restrict_function_size: bool,
+
+    // Check return value of functions
+    pub check_return_value: bool,
 }
 
 pub fn load_ruleset(file_path: &str) -> RuleSet {
