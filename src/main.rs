@@ -30,16 +30,22 @@ impl StaticAnalyzer {
         }
     }
 
+    fn get_line_number(&self, span_point: usize) -> usize {
+        get_location_for_offset(&self.source, span_point).0.line
+    }
+
     fn check_goto(&self, statement: &lang_c::ast::Statement, span: &Span) {
         if let lang_c::ast::Statement::Goto(_) = statement {
-            println!("Error: goto statement found at {:?}", span);
+            let line_number = self.get_line_number(span.start);
+            println!("Error: 'goto' statement found at line {}", line_number);
         }
     }
 
     fn check_setjmp(&self, call_expression: &lang_c::ast::CallExpression, span: &Span) {
         if let lang_c::ast::Expression::Identifier(identifier) = &call_expression.callee.node {
             if identifier.node.name == "setjmp" {
-                println!("Error: setjmp found at {:?}", span);
+                let line_number = self.get_line_number(span.start);
+                println!("Error: 'setjmp' call found at line {}", line_number);
             }
         }
     }
@@ -47,7 +53,8 @@ impl StaticAnalyzer {
     fn check_longjmp(&self, call_expression: &lang_c::ast::CallExpression, span: &Span) {
         if let lang_c::ast::Expression::Identifier(identifier) = &call_expression.callee.node {
             if identifier.node.name == "longjmp" {
-                println!("Error: longjmp found at {:?}", span);
+                let line_number = self.get_line_number(span.start);
+                println!("Error: 'longjmp' call found at line {}", line_number);
             }
         }
     }
@@ -63,7 +70,8 @@ impl StaticAnalyzer {
         if let lang_c::ast::Expression::Identifier(identifier) = &call_expression.callee.node {
             if let Some(current_function) = &self.current_function {
                 if identifier.node.name == *current_function {
-                    println!("Error: Recursive call found at {:?}", span);
+                    let line_number = self.get_line_number(span.start);
+                    println!("Error: Recursion found at line {}", line_number);
                 }
             }
         }
@@ -89,12 +97,15 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
         }
 
         if self.rule_set.restrict_function_size {
-            let start_line = get_location_for_offset(&self.source, span.start).0.line;
-            let end_line = get_location_for_offset(&self.source, span.end).0.line;
+            let start_line = self.get_line_number(span.start);
+            let end_line = self.get_line_number(span.end);
             let size = end_line - start_line + 1;
 
             if size > 50 {
-                println!("Error: Function size exceeds 50 lines at {:?}", span);
+                println!(
+                    "Error: Function size exceeds 50 lines at line {}",
+                    start_line
+                );
             }
         }
 
