@@ -112,33 +112,12 @@ impl StaticAnalyzer {
             }
         }
     }
-}
 
-impl<'ast> Visit<'ast> for StaticAnalyzer {
-    fn visit_expression(&mut self, expression: &'ast lang_c::ast::Expression, span: &'ast Span) {
-        if let lang_c::ast::Expression::Call(call_expression) = &expression {
-            let callee = &call_expression.node.callee.node;
-            if let lang_c::ast::Expression::Identifier(identifier) = callee {
-                // Look up in symbol table to get the type of the function, if it exists and is not void, print an error
-                if let Some(Symbol {
-                    symbol_type: SymbolType::Function { return_type },
-                    ..
-                }) = self.symbol_table.get(&identifier.node.name)
-                {
-                    if *return_type != lang_c::ast::TypeSpecifier::Void {
-                        let line_number = self.get_line_number(span.start);
-                        println!(
-                            "Error: Unused return value of function at line {}",
-                            line_number
-                        );
-                    }
-                }
-            }
-        }
-        visit_expression(self, expression, span);
-    }
-
-    fn visit_declaration(&mut self, declaration: &'ast lang_c::ast::Declaration, span: &'ast Span) {
+    fn add_function_to_symbol_table(
+        &mut self,
+        declaration: &lang_c::ast::Declaration,
+        span: &Span,
+    ) {
         // If DerivedDeclarator KRFunction is present, then it is a function declaration
         let Some(init_declarator) = declaration.declarators.first() else {
             visit_declaration(self, declaration, span);
@@ -176,6 +155,47 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
                 );
             }
         }
+    }
+
+    fn check_return_value(&self, expression: &lang_c::ast::Expression, span: &Span) {
+        if let lang_c::ast::Expression::Call(call_expression) = &expression {
+            let callee = &call_expression.node.callee.node;
+            if let lang_c::ast::Expression::Identifier(identifier) = callee {
+                // Look up in symbol table to get the type of the function, if it exists and is not void, print an error
+                if let Some(Symbol {
+                    symbol_type: SymbolType::Function { return_type },
+                    ..
+                }) = self.symbol_table.get(&identifier.node.name)
+                {
+                    if *return_type != lang_c::ast::TypeSpecifier::Void {
+                        let line_number = self.get_line_number(span.start);
+                        let source_code = self.get_source_code_from_span(span);
+                        println!(
+                            "Error: Return value of function '{}' not checked at line {}",
+                            identifier.node.name, line_number
+                        );
+                        println!("{}", source_code);
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<'ast> Visit<'ast> for StaticAnalyzer {
+    fn visit_expression(&mut self, expression: &'ast lang_c::ast::Expression, span: &'ast Span) {
+        if self.rule_set.check_return_value {
+            self.check_return_value(expression, span);
+        }
+
+        visit_expression(self, expression, span);
+    }
+
+    fn visit_declaration(&mut self, declaration: &'ast lang_c::ast::Declaration, span: &'ast Span) {
+        if self.rule_set.check_return_value {
+            self.add_function_to_symbol_table(declaration, span);
+        }
+        visit_declaration(self, declaration, span);
     }
     fn visit_statement(&mut self, statement: &'ast lang_c::ast::Statement, span: &'ast Span) {
         if self.rule_set.restrict_goto {
@@ -264,7 +284,7 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
             The parser can seemingly handle #include directives, so we can use that to
             include the header files and get the return type of functions such as printf
             */
-            todo!("Implement return value checking");
+            //todo!("Implement return value checking");
         }
 
         visit_call_expression(self, call_expression, span);
@@ -336,5 +356,5 @@ fn main() {
     let mut analyzer = StaticAnalyzer::new(rule_set, source);
     analyzer.visit_translation_unit(&ast.unit);
 
-    println!("{:?}", analyzer.symbol_table);
+    //println!("{:?}", analyzer.symbol_table);
 }

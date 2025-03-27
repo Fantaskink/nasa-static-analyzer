@@ -15,4 +15,4 @@ restrict_heap_allocation = true
 restrict_function_size = true
 
 # Ensure that function calls always have a return value checked
-check_return_value = false
+check_return_value = true
