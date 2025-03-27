@@ -1,12 +1,15 @@
 extern crate lang_c;
 
+use std::collections::HashMap;
+
 use lang_c::driver::{parse, Config};
 use lang_c::loc::get_location_for_offset;
 use lang_c::print::Printer;
 use lang_c::span::Span;
 use lang_c::visit::Visit;
 use lang_c::visit::{
-    visit_call_expression, visit_function_definition, visit_statement, visit_while_statement,
+    visit_call_expression, visit_declaration, visit_function_definition, visit_statement,
+    visit_while_statement,
 };
 
 mod config;
@@ -14,9 +17,24 @@ use config::load_ruleset;
 use config::RuleSet;
 
 #[derive(Debug)]
+enum SymbolType {
+    Function {
+        return_type: lang_c::ast::TypeSpecifier,
+    },
+    Variable,
+}
+
+#[derive(Debug)]
+struct Symbol {
+    name: String,
+    symbol_type: SymbolType,
+}
+
+#[derive(Debug)]
 struct StaticAnalyzer {
-    rule_set: RuleSet,                // Configuration for the static analyzer
-    source: String,                   // Source code of the program being analyzed
+    rule_set: RuleSet,                     // Configuration for the static analyzer
+    symbol_table: HashMap<String, Symbol>, // Symbol table to store the types of variables
+    source: String,                        // Source code of the program being analyzed
     current_function: Option<String>, // Name of the current function being analyzed for recursion
 }
 
@@ -24,6 +42,7 @@ impl StaticAnalyzer {
     fn new(rule_set: RuleSet, source: String) -> Self {
         StaticAnalyzer {
             rule_set,
+            symbol_table: HashMap::new(),
             source,
             current_function: None,
         }
@@ -32,6 +51,12 @@ impl StaticAnalyzer {
     // Helper function to get the line number for a given offset in the source code
     fn get_line_number(&self, span_point: usize) -> usize {
         get_location_for_offset(&self.source, span_point).0.line
+    }
+
+    fn get_source_code_from_span(&self, span: &Span) -> String {
+        let source_line = &self.source[span.start..span.end];
+        let squiggles = "^".repeat(span.end - span.start); // Create squiggles for the span length
+        format!("{}\n{}", source_line, squiggles)
     }
 
     fn check_goto(&self, statement: &lang_c::ast::Statement, span: &Span) {
@@ -78,18 +103,57 @@ impl StaticAnalyzer {
     }
 
     fn check_heap_usage(&self, call_expression: &lang_c::ast::CallExpression, span: &Span) {
-        // Check for usage of malloc, calloc, realloc, etc.
         if let lang_c::ast::Expression::Identifier(identifier) = &call_expression.callee.node {
             let heap_functions = ["malloc", "calloc", "realloc", "free"];
             if heap_functions.contains(&identifier.node.name.as_str()) {
                 let line_number = self.get_line_number(span.start);
                 println!("Error: Heap usage found at line {}", line_number);
+                println!("{}", self.get_source_code_from_span(span));
             }
         }
     }
 }
 
 impl<'ast> Visit<'ast> for StaticAnalyzer {
+    fn visit_declaration(&mut self, declaration: &'ast lang_c::ast::Declaration, span: &'ast Span) {
+        // If DerivedDeclarator KRFunction is present, then it is a function declaration
+        let Some(init_declarator) = declaration.declarators.first() else {
+            visit_declaration(self, declaration, span);
+            return;
+        };
+
+        let derived = &init_declarator.node.declarator.node.derived.first();
+
+        if let Some(lang_c::span::Node {
+            node: lang_c::ast::DerivedDeclarator::KRFunction(_),
+            span: _,
+        }) = derived
+        {
+            if let lang_c::ast::DeclaratorKind::Identifier(identifier) =
+                &init_declarator.node.declarator.node.kind.node
+            {
+                // Extract the return type of the function
+                let return_type = match &declaration.specifiers[..] {
+                    [lang_c::span::Node {
+                        node: lang_c::ast::DeclarationSpecifier::TypeSpecifier(type_specifier),
+                        ..
+                    }] => {
+                        type_specifier.node.clone() // Clone the TypeSpecifier for storage
+                    }
+                    _ => lang_c::ast::TypeSpecifier::Void, // Default to void if unknown
+                };
+
+                // Insert the function into the symbol table with its return type
+                self.symbol_table.insert(
+                    identifier.node.name.clone(),
+                    Symbol {
+                        name: identifier.node.name.clone(),
+                        symbol_type: SymbolType::Function { return_type },
+                    },
+                );
+            }
+        }
+    }
     fn visit_statement(&mut self, statement: &'ast lang_c::ast::Statement, span: &'ast Span) {
         if self.rule_set.restrict_goto {
             self.check_goto(statement, span);
@@ -103,6 +167,30 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
         function_definition: &'ast lang_c::ast::FunctionDefinition,
         span: &'ast Span,
     ) {
+        if let lang_c::ast::DeclaratorKind::Identifier(identifier) =
+            &function_definition.declarator.node.kind.node
+        {
+            // Extract the return type of the function
+            let return_type = match &function_definition.specifiers[..] {
+                [lang_c::span::Node {
+                    node: lang_c::ast::DeclarationSpecifier::TypeSpecifier(type_specifier),
+                    ..
+                }] => {
+                    type_specifier.node.clone() // Clone the TypeSpecifier for storage
+                }
+                _ => lang_c::ast::TypeSpecifier::Void, // Default to void if unknown
+            };
+
+            // Insert the function into the symbol table with its return type
+            self.symbol_table.insert(
+                identifier.node.name.clone(),
+                Symbol {
+                    name: identifier.node.name.clone(),
+                    symbol_type: SymbolType::Function { return_type },
+                },
+            );
+        }
+
         if self.rule_set.restrict_recursion {
             self.set_current_function(function_definition);
         }
@@ -193,11 +281,14 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
         }
 
         if self.rule_set.fixed_loop_bounds && !has_fixed_bound {
+            // Get span of the expression in the while loop
+            let span = &while_statement.expression.span;
             let line_number = self.get_line_number(span.start);
             println!(
                 "Error: Loop at line {} does not have fixed bounds",
                 line_number
             );
+            println!("{}", self.get_source_code_from_span(span));
         }
 
         visit_while_statement(self, while_statement, span);
@@ -221,4 +312,6 @@ fn main() {
 
     let mut analyzer = StaticAnalyzer::new(rule_set, source);
     analyzer.visit_translation_unit(&ast.unit);
+
+    println!("{:?}", analyzer.symbol_table);
 }
