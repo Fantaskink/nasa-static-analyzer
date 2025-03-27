@@ -8,11 +8,17 @@ pub struct RulesConfig {
 
 #[derive(Deserialize)]
 pub struct RuleSet {
-    //pub fixed_loop_bounds: bool,
+    // Avoid complex flow constructs
     pub restrict_goto: bool,
     pub restrict_setjmp: bool,
     pub restrict_longjmp: bool,
     pub restrict_recursion: bool,
+
+    // Enforce loop bounds
+    pub fixed_loop_bounds: bool,
+
+    // Restrict function size
+    pub restrict_function_size: bool,
 }
 
 pub fn load_ruleset(file_path: &str) -> RuleSet {

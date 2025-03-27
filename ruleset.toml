@@ -1,6 +1,12 @@
 [rule_set]
-# fixed_loop_bounds = true
+# Avoid complex flow constructs
 restrict_goto = true
 restrict_longjmp = true
 restrict_setjmp = true
 restrict_recursion = true
+
+# Enforce loop bounds
+fixed_loop_bounds = false
+
+# Enforce function size of no more than 60 lines
+restrict_function_size = true
