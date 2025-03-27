@@ -6,7 +6,7 @@ use lang_c::print::Printer;
 use lang_c::span::Span;
 use lang_c::visit::Visit;
 use lang_c::visit::{
-    visit_call_expression, visit_function_definition, visit_statement, visit_while_statement,
+    visit_call_expression, visit_function_definition, visit_statement, visit_while_statement, visit_binary_operator_expression, visit_block_item,
 };
 
 mod config;
@@ -19,6 +19,7 @@ struct StaticAnalyzer {
     source: String,                   // Source code of the program being analyzed
     current_function: Option<String>, // Name of the current function being analyzed for recursion
     analyzing_loop: bool, // Flag to indicate if the analyzer is currently analyzing a loop for bounds
+    loop_has_bound: bool, // Flag to indicate if the loop has a bound
 }
 
 impl StaticAnalyzer {
@@ -28,6 +29,7 @@ impl StaticAnalyzer {
             source,
             current_function: None,
             analyzing_loop: false,
+            loop_has_bound: false,
         }
     }
 
@@ -166,13 +168,40 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
     ) {
         if self.rule_set.fixed_loop_bounds {
             self.analyzing_loop = true;
-            todo!("Implement loop bounds checking");
+            //todo!("Implement loop bounds checking");
         }
 
-        self.analyzing_loop = false;
-
         visit_while_statement(self, while_statement, span);
+
+        if self.rule_set.fixed_loop_bounds {
+            self.analyzing_loop = false;
+            self.loop_has_bound = false;
+        }
     }
+
+    fn visit_block_item(&mut self, block_item: &'ast lang_c::ast::BlockItem, span: &'ast Span) {
+        if self.rule_set.fixed_loop_bounds && self.analyzing_loop && !self.loop_has_bound {
+            let line_number = self.get_line_number(span.start);
+            println!("Error: Loop at line {} does not have a bound", line_number);
+            self.analyzing_loop = false;
+            self.loop_has_bound = false;
+        }
+
+        visit_block_item(self, block_item, span);
+    }
+
+    fn visit_binary_operator_expression(
+            &mut self,
+            binary_operator_expression: &'ast lang_c::ast::BinaryOperatorExpression,
+            span: &'ast Span,
+        ) {
+            if self.analyzing_loop {
+                self.loop_has_bound = true;
+            }
+
+            visit_binary_operator_expression(self, binary_operator_expression, span);
+        }
+    
 }
 
 fn main() {
