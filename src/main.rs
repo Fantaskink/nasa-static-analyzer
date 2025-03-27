@@ -6,8 +6,7 @@ use lang_c::print::Printer;
 use lang_c::span::Span;
 use lang_c::visit::Visit;
 use lang_c::visit::{
-    visit_binary_operator_expression, visit_block_item, visit_call_expression,
-    visit_function_definition, visit_statement, visit_while_statement,
+    visit_call_expression, visit_function_definition, visit_statement, visit_while_statement,
 };
 
 mod config;
@@ -164,17 +163,38 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
     ) {
         let mut has_fixed_bound = false;
 
-        if let lang_c::ast::Expression::BinaryOperator(binary_operator_expression) = &while_statement.expression.node {
-            if let lang_c::ast::BinaryOperator::Less =
-                binary_operator_expression.node.operator.node
+        if let lang_c::ast::Expression::BinaryOperator(binary_operator_expression) =
+            &while_statement.expression.node
+        {
             {
-                has_fixed_bound = true;
+                match binary_operator_expression.node.operator.node {
+                    lang_c::ast::BinaryOperator::Less
+                    | lang_c::ast::BinaryOperator::LessOrEqual
+                    | lang_c::ast::BinaryOperator::Greater
+                    | lang_c::ast::BinaryOperator::GreaterOrEqual
+                    | lang_c::ast::BinaryOperator::Equals => {
+                        // Check if one side of the condition is a constant
+                        if matches!(
+                            binary_operator_expression.node.lhs.node,
+                            lang_c::ast::Expression::Constant(_)
+                        ) || matches!(
+                            binary_operator_expression.node.rhs.node,
+                            lang_c::ast::Expression::Constant(_)
+                        ) {
+                            has_fixed_bound = true;
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
 
         if self.rule_set.fixed_loop_bounds && !has_fixed_bound {
             let line_number = self.get_line_number(span.start);
-            println!("Error: Loop at line {} does not have fixed bounds", line_number);
+            println!(
+                "Error: Loop at line {} does not have fixed bounds",
+                line_number
+            );
         }
 
         visit_while_statement(self, while_statement, span);
