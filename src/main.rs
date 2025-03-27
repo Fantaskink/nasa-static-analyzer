@@ -112,6 +112,7 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
             let end_line = self.get_line_number(span.end);
             let size = end_line - start_line + 1;
 
+            // TODO: This should be configurable
             if size > 60 {
                 println!(
                     "Error: Function size exceeds 60 lines at line {}",
@@ -121,6 +122,8 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
         }
 
         visit_function_definition(self, function_definition, span);
+
+        self.current_function = None;
     }
 
     fn visit_call_expression(
