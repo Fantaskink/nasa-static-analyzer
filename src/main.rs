@@ -150,44 +150,44 @@ impl StaticAnalyzer {
     fn add_function_to_symbol_table(
         &mut self,
         declaration: &lang_c::ast::Declaration,
-        span: &Span,
+        _span: &Span,
     ) {
-        // If DerivedDeclarator KRFunction is present, then it is a function declaration
-        let Some(init_declarator) = declaration.declarators.first() else {
-            visit_declaration(self, declaration, span);
-            return;
-        };
-
-        let derived = &init_declarator.node.declarator.node.derived.first();
-
-        if let Some(lang_c::span::Node {
-            node: lang_c::ast::DerivedDeclarator::KRFunction(_),
-            span: _,
-        }) = derived
-        {
-            if let lang_c::ast::DeclaratorKind::Identifier(identifier) =
-                &init_declarator.node.declarator.node.kind.node
+        for init_declarator in &declaration.declarators {
+            if let Some(lang_c::span::Node {
+                node: lang_c::ast::DerivedDeclarator::KRFunction(_),
+                ..
+            }) = init_declarator.node.declarator.node.derived.first()
             {
-                // Extract the return type of the function
-                let return_type = match &declaration.specifiers[..] {
-                    [lang_c::span::Node {
-                        node: lang_c::ast::DeclarationSpecifier::TypeSpecifier(type_specifier),
-                        ..
-                    }] => {
-                        type_specifier.node.clone() // Clone the TypeSpecifier for storage
-                    }
-                    _ => lang_c::ast::TypeSpecifier::Void, // Default to void if unknown
-                };
+                if let lang_c::ast::DeclaratorKind::Identifier(identifier) =
+                    &init_declarator.node.declarator.node.kind.node
+                {
+                    // Extract the return type of the function
+                    let return_type = self.extract_return_type(declaration);
 
-                // Insert the function into the symbol table with its return type
-                self.symbol_table.insert(
-                    identifier.node.name.clone(),
-                    Symbol {
-                        name: identifier.node.name.clone(),
-                        symbol_type: SymbolType::Function { return_type },
-                    },
-                );
+                    // Insert the function into the symbol table with its return type
+                    self.symbol_table.insert(
+                        identifier.node.name.clone(),
+                        Symbol {
+                            name: identifier.node.name.clone(),
+                            symbol_type: SymbolType::Function { return_type },
+                        },
+                    );
+                }
             }
+        }
+    }
+
+    // Helper function to extract the return type
+    fn extract_return_type(
+        &self,
+        declaration: &lang_c::ast::Declaration,
+    ) -> lang_c::ast::TypeSpecifier {
+        match &declaration.specifiers[..] {
+            [lang_c::span::Node {
+                node: lang_c::ast::DeclarationSpecifier::TypeSpecifier(type_specifier),
+                ..
+            }] => type_specifier.node.clone(), // Clone the TypeSpecifier for storage
+            _ => lang_c::ast::TypeSpecifier::Void, // Default to void if unknown
         }
     }
 
@@ -223,6 +223,7 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
             self.add_function_to_symbol_table(declaration, span);
         }
         visit_declaration(self, declaration, span);
+        self.current_function_type_cast = None;
     }
     fn visit_statement(&mut self, statement: &'ast lang_c::ast::Statement, span: &'ast Span) {
         if self.rule_set.restrict_goto {
