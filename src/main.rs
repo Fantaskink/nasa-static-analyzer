@@ -8,8 +8,8 @@ use lang_c::print::Printer;
 use lang_c::span::Span;
 use lang_c::visit::Visit;
 use lang_c::visit::{
-    visit_call_expression, visit_declaration, visit_function_definition, visit_statement,
-    visit_while_statement,
+    visit_call_expression, visit_declaration, visit_expression, visit_function_definition,
+    visit_statement, visit_while_statement,
 };
 
 mod config;
@@ -115,6 +115,29 @@ impl StaticAnalyzer {
 }
 
 impl<'ast> Visit<'ast> for StaticAnalyzer {
+    fn visit_expression(&mut self, expression: &'ast lang_c::ast::Expression, span: &'ast Span) {
+        if let lang_c::ast::Expression::Call(call_expression) = &expression {
+            let callee = &call_expression.node.callee.node;
+            if let lang_c::ast::Expression::Identifier(identifier) = callee {
+                // Look up in symbol table to get the type of the function, if it exists and is not void, print an error
+                if let Some(Symbol {
+                    symbol_type: SymbolType::Function { return_type },
+                    ..
+                }) = self.symbol_table.get(&identifier.node.name)
+                {
+                    if *return_type != lang_c::ast::TypeSpecifier::Void {
+                        let line_number = self.get_line_number(span.start);
+                        println!(
+                            "Error: Unused return value of function at line {}",
+                            line_number
+                        );
+                    }
+                }
+            }
+        }
+        visit_expression(self, expression, span);
+    }
+
     fn visit_declaration(&mut self, declaration: &'ast lang_c::ast::Declaration, span: &'ast Span) {
         // If DerivedDeclarator KRFunction is present, then it is a function declaration
         let Some(init_declarator) = declaration.declarators.first() else {
