@@ -102,6 +102,36 @@ impl StaticAnalyzer {
         }
     }
 
+    fn check_while_loop_bounds(&self, while_statement: &lang_c::ast::WhileStatement, span: &Span) {
+        if let lang_c::ast::Expression::BinaryOperator(binary_operator_expression) =
+            &while_statement.expression.node
+        {
+            match binary_operator_expression.node.operator.node {
+                lang_c::ast::BinaryOperator::Less
+                | lang_c::ast::BinaryOperator::LessOrEqual
+                | lang_c::ast::BinaryOperator::Greater
+                | lang_c::ast::BinaryOperator::GreaterOrEqual
+                | lang_c::ast::BinaryOperator::Equals => {
+                    // Check if one side of the condition is a constant
+                    if matches!(
+                        binary_operator_expression.node.lhs.node,
+                        lang_c::ast::Expression::Constant(_)
+                    ) || matches!(
+                        binary_operator_expression.node.rhs.node,
+                        lang_c::ast::Expression::Constant(_)
+                    ) {
+                        return;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let line_number = self.get_line_number(span.start);
+        println!("Error: Loop at line {} does not have fixed bounds", line_number);
+        
+    }
+
     fn check_heap_usage(&self, call_expression: &lang_c::ast::CallExpression, span: &Span) {
         if let lang_c::ast::Expression::Identifier(identifier) = &call_expression.callee.node {
             let heap_functions = ["malloc", "calloc", "realloc", "free"];
@@ -295,45 +325,9 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
         while_statement: &'ast lang_c::ast::WhileStatement,
         span: &'ast Span,
     ) {
-        let mut has_fixed_bound = false;
-
-        if let lang_c::ast::Expression::BinaryOperator(binary_operator_expression) =
-            &while_statement.expression.node
-        {
-            {
-                match binary_operator_expression.node.operator.node {
-                    lang_c::ast::BinaryOperator::Less
-                    | lang_c::ast::BinaryOperator::LessOrEqual
-                    | lang_c::ast::BinaryOperator::Greater
-                    | lang_c::ast::BinaryOperator::GreaterOrEqual
-                    | lang_c::ast::BinaryOperator::Equals => {
-                        // Check if one side of the condition is a constant
-                        if matches!(
-                            binary_operator_expression.node.lhs.node,
-                            lang_c::ast::Expression::Constant(_)
-                        ) || matches!(
-                            binary_operator_expression.node.rhs.node,
-                            lang_c::ast::Expression::Constant(_)
-                        ) {
-                            has_fixed_bound = true;
-                        }
-                    }
-                    _ => {}
-                }
-            }
+        if self.rule_set.fixed_loop_bounds {
+            self.check_while_loop_bounds(while_statement, span);
         }
-
-        if self.rule_set.fixed_loop_bounds && !has_fixed_bound {
-            // Get span of the expression in the while loop
-            let span = &while_statement.expression.span;
-            let line_number = self.get_line_number(span.start);
-            println!(
-                "Error: Loop at line {} does not have fixed bounds",
-                line_number
-            );
-            println!("{}", self.get_source_code_from_span(span));
-        }
-
         visit_while_statement(self, while_statement, span);
     }
 }
