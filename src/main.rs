@@ -21,7 +21,6 @@ enum SymbolType {
     Function {
         return_type: lang_c::ast::TypeSpecifier,
     },
-    Variable,
 }
 
 #[derive(Debug)]
@@ -194,18 +193,17 @@ impl StaticAnalyzer {
     fn check_return_value(&self, call_expression: &lang_c::ast::CallExpression, span: &Span) {
         if let lang_c::ast::Expression::Identifier(identifier) = &call_expression.callee.node {
             if let Some(symbol) = self.symbol_table.get(&identifier.node.name) {
-                if let SymbolType::Function { return_type } = &symbol.symbol_type {
-                    // Check if the return type is not void
-                    if *return_type != lang_c::ast::TypeSpecifier::Void {
-                        // Ensure that current_function_type_cast is set
-                        if self.current_function_type_cast.is_none() {
-                            let line_number = self.get_line_number(span.start);
-                            println!(
+                let SymbolType::Function { return_type } = &symbol.symbol_type;
+                // Check if the return type is not void
+                if *return_type != lang_c::ast::TypeSpecifier::Void {
+                    // Ensure that current_function_type_cast is set
+                    if self.current_function_type_cast.is_none() {
+                        let line_number = self.get_line_number(span.start);
+                        println!(
                                 "Error: Call to non-void function at line {} does not handle the return value",
                                 line_number
                             );
-                            println!("{}", self.get_source_code_from_span(span));
-                        }
+                        println!("{}", self.get_source_code_from_span(span));
                     }
                 }
             }

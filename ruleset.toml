@@ -8,7 +8,7 @@ restrict_recursion = true
 # Enforce loop bounds
 fixed_loop_bounds = true
 
-# Restrict the use of heap allocation, e.g. malloc, calloc, realloc, free
+# Restrict the use of heap allocation, i.e. malloc, calloc, realloc, free
 restrict_heap_allocation = true
 
 # Enforce function size of no more than 60 lines
