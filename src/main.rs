@@ -6,7 +6,8 @@ use lang_c::print::Printer;
 use lang_c::span::Span;
 use lang_c::visit::Visit;
 use lang_c::visit::{
-    visit_call_expression, visit_function_definition, visit_statement, visit_while_statement, visit_binary_operator_expression, visit_block_item,
+    visit_binary_operator_expression, visit_block_item, visit_call_expression,
+    visit_function_definition, visit_statement, visit_while_statement,
 };
 
 mod config;
@@ -18,8 +19,6 @@ struct StaticAnalyzer {
     rule_set: RuleSet,                // Configuration for the static analyzer
     source: String,                   // Source code of the program being analyzed
     current_function: Option<String>, // Name of the current function being analyzed for recursion
-    analyzing_loop: bool, // Flag to indicate if the analyzer is currently analyzing a loop for bounds
-    loop_has_bound: bool, // Flag to indicate if the loop has a bound
 }
 
 impl StaticAnalyzer {
@@ -28,8 +27,6 @@ impl StaticAnalyzer {
             rule_set,
             source,
             current_function: None,
-            analyzing_loop: false,
-            loop_has_bound: false,
         }
     }
 
@@ -132,7 +129,6 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
         call_expression: &'ast lang_c::ast::CallExpression,
         span: &'ast Span,
     ) {
-        
         if self.rule_set.restrict_recursion {
             self.check_recursion(call_expression, span);
         }
@@ -166,42 +162,23 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
         while_statement: &'ast lang_c::ast::WhileStatement,
         span: &'ast Span,
     ) {
-        if self.rule_set.fixed_loop_bounds {
-            self.analyzing_loop = true;
-            //todo!("Implement loop bounds checking");
+        let mut has_fixed_bound = false;
+
+        if let lang_c::ast::Expression::BinaryOperator(binary_operator_expression) = &while_statement.expression.node {
+            if let lang_c::ast::BinaryOperator::Less =
+                binary_operator_expression.node.operator.node
+            {
+                has_fixed_bound = true;
+            }
+        }
+
+        if self.rule_set.fixed_loop_bounds && !has_fixed_bound {
+            let line_number = self.get_line_number(span.start);
+            println!("Error: Loop at line {} does not have fixed bounds", line_number);
         }
 
         visit_while_statement(self, while_statement, span);
-
-        if self.rule_set.fixed_loop_bounds {
-            self.analyzing_loop = false;
-            self.loop_has_bound = false;
-        }
     }
-
-    fn visit_block_item(&mut self, block_item: &'ast lang_c::ast::BlockItem, span: &'ast Span) {
-        if self.rule_set.fixed_loop_bounds && self.analyzing_loop && !self.loop_has_bound {
-            let line_number = self.get_line_number(span.start);
-            println!("Error: Loop at line {} does not have a bound", line_number);
-            self.analyzing_loop = false;
-            self.loop_has_bound = false;
-        }
-
-        visit_block_item(self, block_item, span);
-    }
-
-    fn visit_binary_operator_expression(
-            &mut self,
-            binary_operator_expression: &'ast lang_c::ast::BinaryOperatorExpression,
-            span: &'ast Span,
-        ) {
-            if self.analyzing_loop {
-                self.loop_has_bound = true;
-            }
-
-            visit_binary_operator_expression(self, binary_operator_expression, span);
-        }
-    
 }
 
 fn main() {
