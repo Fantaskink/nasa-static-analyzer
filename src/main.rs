@@ -186,6 +186,8 @@ impl StaticAnalyzer {
         }
     }
 
+    // This will only handle cases where the function call is the immediate child of an initializer
+    // It should handle cases where the function call is nested within other expressions
     fn mark_function_type_checked(&mut self, initializer: &lang_c::ast::Initializer) {
         if let lang_c::ast::Initializer::Expression(expression) = &initializer {
             let node = &expression.node;
