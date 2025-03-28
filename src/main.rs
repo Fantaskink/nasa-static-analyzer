@@ -25,7 +25,7 @@ enum SymbolType {
 
 #[derive(Debug)]
 struct Symbol {
-    name: String,
+    _name: String,
     symbol_type: SymbolType,
 }
 
@@ -167,7 +167,7 @@ impl StaticAnalyzer {
                     self.symbol_table.insert(
                         identifier.node.name.clone(),
                         Symbol {
-                            name: identifier.node.name.clone(),
+                            _name: identifier.node.name.clone(),
                             symbol_type: SymbolType::Function { return_type },
                         },
                     );
@@ -254,7 +254,7 @@ impl<'ast> Visit<'ast> for StaticAnalyzer {
             self.symbol_table.insert(
                 identifier.node.name.clone(),
                 Symbol {
-                    name: identifier.node.name.clone(),
+                    _name: identifier.node.name.clone(),
                     symbol_type: SymbolType::Function { return_type },
                 },
             );

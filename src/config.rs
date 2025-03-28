@@ -6,7 +6,7 @@ pub struct RulesConfig {
     pub rule_set: RuleSet,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct RuleSet {
     // Avoid complex flow constructs
     pub restrict_goto: bool,
