@@ -8,8 +8,8 @@ use lang_c::print::Printer;
 use lang_c::span::Span;
 use lang_c::visit::Visit;
 use lang_c::visit::{
-    visit_call_expression, visit_cast_expression, visit_declaration, visit_expression,
-    visit_function_definition, visit_statement, visit_while_statement,
+    visit_call_expression, visit_cast_expression, visit_declaration, visit_function_definition,
+    visit_initializer, visit_statement, visit_while_statement,
 };
 
 mod config;
@@ -146,11 +146,7 @@ impl StaticAnalyzer {
         }
     }
 
-    fn add_function_to_symbol_table(
-        &mut self,
-        declaration: &lang_c::ast::Declaration,
-        _span: &Span,
-    ) {
+    fn add_function_to_symbol_table(&mut self, declaration: &lang_c::ast::Declaration) {
         for init_declarator in &declaration.declarators {
             if let Some(lang_c::span::Node {
                 node: lang_c::ast::DerivedDeclarator::KRFunction(_),
@@ -190,6 +186,23 @@ impl StaticAnalyzer {
         }
     }
 
+    fn mark_function_type_checked(&mut self, initializer: &lang_c::ast::Initializer) {
+        if let lang_c::ast::Initializer::Expression(expression) = &initializer {
+            let node = &expression.node;
+            if let lang_c::ast::Expression::Call(call) = node {
+                let callee = &call.node.callee.node;
+                if let lang_c::ast::Expression::Identifier(identifier) = callee {
+                    let func_name = &identifier.node.name;
+                    // If function is in symbol table, set self.current_function_type_cast to return type of function
+                    if let Some(symbol) = self.symbol_table.get(func_name) {
+                        let SymbolType::Function { return_type } = &symbol.symbol_type;
+                        self.current_function_type_cast = Some(return_type.clone());
+                    }
+                }
+            }
+        }
+    }
+
     fn check_return_value(&self, call_expression: &lang_c::ast::CallExpression, span: &Span) {
         if let lang_c::ast::Expression::Identifier(identifier) = &call_expression.callee.node {
             if let Some(symbol) = self.symbol_table.get(&identifier.node.name) {
@@ -200,7 +213,7 @@ impl StaticAnalyzer {
                     if self.current_function_type_cast.is_none() {
                         let line_number = self.get_line_number(span.start);
                         println!(
-                                "Error: Call to non-void function at line {} does not handle the return value",
+                                "Error: Call to non-void function at line {} does not handle return value",
                                 line_number
                             );
                         println!("{}", self.get_source_code_from_span(span));
@@ -212,13 +225,15 @@ impl StaticAnalyzer {
 }
 
 impl<'ast> Visit<'ast> for StaticAnalyzer {
-    fn visit_expression(&mut self, expression: &'ast lang_c::ast::Expression, span: &'ast Span) {
-        visit_expression(self, expression, span);
+    fn visit_initializer(&mut self, initializer: &'ast lang_c::ast::Initializer, span: &'ast Span) {
+        self.mark_function_type_checked(initializer);
+        visit_initializer(self, initializer, span);
+        self.current_function_type_cast = None;
     }
 
     fn visit_declaration(&mut self, declaration: &'ast lang_c::ast::Declaration, span: &'ast Span) {
         if self.rule_set.check_return_value {
-            self.add_function_to_symbol_table(declaration, span);
+            self.add_function_to_symbol_table(declaration);
         }
         visit_declaration(self, declaration, span);
         self.current_function_type_cast = None;
